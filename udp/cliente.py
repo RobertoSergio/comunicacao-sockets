@@ -1,0 +1,145 @@
+import argparse
+import random
+import socket
+import time
+
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 6789
+REQUEST_COUNT = 20
+TIMEOUT = 0.5
+MAX_ATTEMPTS = 5
+
+
+def generate_request(sequence_number):
+    operand1 = random.randint(1, 100)
+    operand2 = random.randint(1, 100)
+    operation = random.choice(["+", "-", "*", "/"])
+
+    if operation == "/":
+        operand1 = random.randint(1, 100)
+        operand2 = random.randint(1, 100)
+
+    return f"CALC:{sequence_number}:{operand1}:{operation}:{operand2}"
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Cliente UDP da calculadora"
+    )
+
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+    )
+
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+    )
+
+    args = parser.parse_args()
+
+    sock = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_DGRAM,
+    )
+
+    sock.settimeout(TIMEOUT)
+
+    total_start = time.perf_counter()
+
+    total_retransmissions = 0
+    permanently_lost = 0
+    rtts = []
+
+    print("=" * 60)
+    print("Cliente UDP da calculadora")
+    print("=" * 60)
+    print(f"Servidor: {args.host}:{args.port}")
+    print(f"Requisições: {REQUEST_COUNT}")
+    print(f"Timeout: {TIMEOUT * 1000:.0f} ms")
+    print(f"Máximo de tentativas: {MAX_ATTEMPTS}")
+    print()
+
+    try:
+        for sequence_number in range(REQUEST_COUNT):
+            request = generate_request(sequence_number)
+            attempts = 0
+            received = False
+
+            while attempts < MAX_ATTEMPTS and not received:
+                attempts += 1
+
+                try:
+                    start = time.perf_counter()
+
+                    sock.sendto(
+                        request.encode("utf-8"),
+                        (args.host, args.port),
+                    )
+
+                    data, _ = sock.recvfrom(4096)
+
+                    end = time.perf_counter()
+
+                    response = data.decode("utf-8").strip()
+                    rtt = (end - start) * 1000
+
+                    rtts.append(rtt)
+
+                    print(
+                        f"[{sequence_number:02d}] "
+                        f"{request} -> {response} | "
+                        f"RTT: {rtt:.2f} ms | "
+                        f"Tentativas: {attempts}"
+                    )
+
+                    received = True
+
+                except socket.timeout:
+                    if attempts < MAX_ATTEMPTS:
+                        total_retransmissions += 1
+                        print(
+                            f"[{sequence_number:02d}] "
+                            f"Timeout na tentativa {attempts}. "
+                            f"Retransmitindo..."
+                        )
+
+            if not received:
+                permanently_lost += 1
+
+                print(
+                    f"[{sequence_number:02d}] "
+                    f"Requisição perdida após {MAX_ATTEMPTS} tentativas."
+                )
+
+    except KeyboardInterrupt:
+        print("\nCliente encerrado pelo usuário.")
+
+    except OSError as error:
+        print(f"[ERRO] Falha na comunicação: {error}")
+
+    finally:
+        sock.close()
+
+    total_time = (time.perf_counter() - total_start) * 1000
+
+    average_rtt = sum(rtts) / len(rtts) if rtts else 0
+    max_rtt = max(rtts) if rtts else 0
+
+    print()
+    print("=" * 60)
+    print("Resumo")
+    print("=" * 60)
+    print(f"Tempo total: {total_time:.2f} ms")
+    print(f"RTT médio: {average_rtt:.2f} ms")
+    print(f"RTT máximo: {max_rtt:.2f} ms")
+    print(f"Retransmissões: {total_retransmissions}")
+    print(f"Perdidas permanentemente: {permanently_lost}")
+    print(f"Respostas recebidas: {len(rtts)}/{REQUEST_COUNT}")
+
+
+if __name__ == "__main__":
+    main()
