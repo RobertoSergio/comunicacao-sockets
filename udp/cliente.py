@@ -85,8 +85,12 @@ def main():
                     end = time.perf_counter()
 
                     response = data.decode("utf-8").strip()
-                    rtt = (end - start) * 1000
+                    parts = response.split(":")
 
+                    if len(parts) < 2 or parts[1] != str(sequence_number):
+                        continue
+
+                    rtt = (end - start) * 1000
                     rtts.append(rtt)
 
                     print(
@@ -98,7 +102,7 @@ def main():
 
                     received = True
 
-                except socket.timeout:
+                except (socket.timeout, ConnectionResetError):
                     if attempts < MAX_ATTEMPTS:
                         total_retransmissions += 1
                         print(

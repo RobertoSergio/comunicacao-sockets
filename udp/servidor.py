@@ -60,7 +60,7 @@ def calculate(operand1, operation, operand2):
 
 
 def format_number(value):
-    return f"{value:g}"
+    return str(value)
 
 
 def process_request(sock, data, client_address, loss_rate):
