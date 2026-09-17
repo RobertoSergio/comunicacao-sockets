@@ -7,7 +7,6 @@ DEFAULT_PORT = 6789
 BUFFER_SIZE = 4096
 MAX_WORKERS = 10
 
-
 def parse_request(message):
     parts = message.split(":")
 
@@ -37,7 +36,6 @@ def parse_request(message):
 
     return sequence_number, operand1, operation, operand2
 
-
 def calculate(operand1, operation, operand2):
     if operation == "+":
         return operand1 + operand2
@@ -54,7 +52,6 @@ def calculate(operand1, operation, operand2):
         return operand1 / operand2
 
     raise ValueError("operação inválida")
-
 
 def process_request(message):
     sequence_number = None
@@ -87,7 +84,6 @@ def process_request(message):
             return "ERROR:-1:erro interno no servidor"
 
         return f"ERROR:{sequence_number}:erro interno no servidor"
-
 
 def handle_client(conn, client_address):
     print(
@@ -134,7 +130,6 @@ def handle_client(conn, client_address):
     print(
         f"[ENCERRADO] {client_address[0]}:{client_address[1]}"
     )
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -187,7 +182,6 @@ def main():
 
     finally:
         server.close()
-
 
 if __name__ == "__main__":
     main()

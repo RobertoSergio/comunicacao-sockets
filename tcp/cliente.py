@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 import socket
 import time
@@ -6,7 +7,7 @@ import time
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 6789
 REQUEST_COUNT = 20
-
+RESULTS_FILE = "resultados/resultados_tcp.md"
 
 def generate_request(sequence_number):
     operand1 = random.randint(1, 100)
@@ -18,13 +19,66 @@ def generate_request(sequence_number):
 
     return f"CALC:{sequence_number}:{operand1}:{operation}:{operand2}"
 
+def save_results(
+    execution,
+    total_time,
+    average_rtt,
+    max_rtt,
+    responses_received,
+):
+    os.makedirs(
+        os.path.dirname(RESULTS_FILE),
+        exist_ok=True,
+    )
+
+    file_exists = os.path.exists(RESULTS_FILE)
+
+    with open(
+        RESULTS_FILE,
+        "a",
+        encoding="utf-8",
+    ) as file:
+        if not file_exists or os.path.getsize(RESULTS_FILE) == 0:
+            file.write("# Resultados TCP\n\n")
+
+        file.write(
+            f"## Execução {execution}\n\n"
+        )
+        file.write(
+            f"- Tempo total: {total_time:.2f} ms\n"
+        )
+        file.write(
+            f"- RTT médio: {average_rtt:.2f} ms\n"
+        )
+        file.write(
+            f"- RTT máximo: {max_rtt:.2f} ms\n"
+        )
+        file.write(
+            f"- Respostas recebidas: "
+            f"{responses_received}/{REQUEST_COUNT}\n\n"
+        )
 
 def main():
     parser = argparse.ArgumentParser(
         description="Cliente TCP da calculadora"
     )
-    parser.add_argument("--host", default=DEFAULT_HOST)
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+    )
+
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+    )
+
+    parser.add_argument(
+        "--execution",
+        type=int,
+        required=True,
+    )
 
     args = parser.parse_args()
 
@@ -36,10 +90,14 @@ def main():
     print("=" * 60)
     print(f"Servidor: {args.host}:{args.port}")
     print(f"Requisições: {REQUEST_COUNT}")
+    print(f"Execução: {args.execution}")
     print()
 
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        with socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM,
+        ) as sock:
             sock.connect((args.host, args.port))
 
             for sequence_number in range(REQUEST_COUNT):
@@ -47,7 +105,9 @@ def main():
 
                 start = time.perf_counter()
 
-                sock.sendall(request.encode("utf-8"))
+                sock.sendall(
+                    request.encode("utf-8")
+                )
 
                 data = sock.recv(4096)
 
@@ -57,7 +117,10 @@ def main():
 
                 parts = response.split(":")
 
-                if len(parts) < 2 or parts[1] != str(sequence_number):
+                if (
+                    len(parts) < 2
+                    or parts[1] != str(sequence_number)
+                ):
                     print(
                         f"[{sequence_number:02d}] "
                         f"Resposta inválida: {response}"
@@ -80,24 +143,54 @@ def main():
         )
 
     except ConnectionResetError:
-        print("[ERRO] A conexão foi encerrada pelo servidor.")
+        print(
+            "[ERRO] A conexão foi encerrada pelo servidor."
+        )
 
     except OSError as error:
-        print(f"[ERRO] Falha na comunicação: {error}")
+        print(
+            f"[ERRO] Falha na comunicação: {error}"
+        )
 
-    total_time = (time.perf_counter() - total_start) * 1000
-    average_rtt = sum(rtts) / len(rtts) if rtts else 0
+    total_time = (
+        time.perf_counter() - total_start
+    ) * 1000
+
+    average_rtt = (
+        sum(rtts) / len(rtts)
+        if rtts
+        else 0
+    )
+
     max_rtt = max(rtts) if rtts else 0
+
+    responses_received = len(rtts)
 
     print()
     print("=" * 60)
     print("Resumo")
     print("=" * 60)
-    print(f"Tempo total: {total_time:.2f} ms")
-    print(f"RTT médio: {average_rtt:.2f} ms")
-    print(f"RTT máximo: {max_rtt:.2f} ms")
-    print(f"Respostas recebidas: {len(rtts)}/{REQUEST_COUNT}")
+    print(
+        f"Tempo total: {total_time:.2f} ms"
+    )
+    print(
+        f"RTT médio: {average_rtt:.2f} ms"
+    )
+    print(
+        f"RTT máximo: {max_rtt:.2f} ms"
+    )
+    print(
+        f"Respostas recebidas: "
+        f"{responses_received}/{REQUEST_COUNT}"
+    )
 
+    save_results(
+        args.execution,
+        total_time,
+        average_rtt,
+        max_rtt,
+        responses_received,
+    )
 
 if __name__ == "__main__":
     main()

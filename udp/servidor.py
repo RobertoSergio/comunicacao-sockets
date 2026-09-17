@@ -3,12 +3,10 @@ import random
 import socket
 from concurrent.futures import ThreadPoolExecutor
 
-
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 6789
 BUFFER_SIZE = 4096
 MAX_WORKERS = 10
-
 
 def parse_request(message):
     parts = message.split(":")
@@ -39,7 +37,6 @@ def parse_request(message):
 
     return sequence_number, operand1, operation, operand2
 
-
 def calculate(operand1, operation, operand2):
     if operation == "+":
         return operand1 + operand2
@@ -57,7 +54,6 @@ def calculate(operand1, operation, operand2):
         return operand1 / operand2
 
     raise ValueError("operação inválida")
-
 
 def format_number(value):
     return str(value)
