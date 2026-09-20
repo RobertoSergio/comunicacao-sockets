@@ -19,6 +19,7 @@ comunicacao-sockets/
 │   ├── cliente.py
 │   └── servidor.py
 ├── resultados/
+│   ├── comparacao.md
 │   ├── resultados_udp.md
 │   ├── resultados_tcp.md
 │   └── resultados_proto.md
@@ -303,9 +304,29 @@ A comparação entre UDP e TCP considera principalmente o comportamento diante d
 
 No UDP, a aplicação implementa timeout e retransmissão para lidar com respostas que não chegam. A taxa de perda simulada é alterada durante os experimentos para observar seu impacto no tempo total e na quantidade de retransmissões.
 
+| Taxa de perda | Tempo total médio (s) | RTT médio (ms) | Retransmissões médias | Perdas definitivas |
+| ------------- | --------------------: | -------------: | --------------------: | -----------------: |
+| 0%            |               0,00776 |          0,337 |                  0,00 |               0/20 |
+| 10%           |               1,70649 |          0,600 |                  3,33 |               0/20 |
+| 30%           |               4,07405 |          0,653 |                  8,00 |               0/20 |
+
+Os valores apresentados para UDP correspondem à média de três execuções para cada taxa de perda, com 20 requisições por execução. Mesmo com as perdas simuladas, nenhuma requisição foi perdida definitivamente nos testes, pois o cliente realizou retransmissões até receber uma resposta válida ou atingir o limite de tentativas.
+
 No TCP, a aplicação não implementa retransmissões próprias. A confiabilidade da comunicação é fornecida pelo próprio protocolo.
 
+| Protocolo      | Tempo total (s) | RTT médio (ms) | RTT máximo (ms) | Respostas recebidas |
+| -------------- | --------------: | -------------: | --------------: | ------------------: |
+| TCP            |         0,00363 |          0,120 |            0,45 |               20/20 |
+| TCP + Protobuf |         0,00456 |          0,140 |            0,40 |               20/20 |
+
 A implementação com Protocol Buffers utiliza TCP, mas substitui a representação textual das mensagens por uma representação binária.
+
+| Formato        | Requisição (bytes) | Resposta (bytes) | Total por troca (bytes) |
+| -------------- | -----------------: | ---------------: | ----------------------: |
+| TCP textual    |              14,40 |            20,30 |                   34,70 |
+| TCP + Protobuf |              22,90 |            12,90 |                   35,80 |
+
+Neste experimento, a troca com Protocol Buffers teve média de 35,80 bytes, enquanto a comunicação textual teve média de 34,70 bytes, uma diferença de 1,10 byte por troca.
 
 ## Tecnologias utilizadas
 
