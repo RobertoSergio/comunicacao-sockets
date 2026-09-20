@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package calculadora;
+
+message Requisicao {
+  int32 numero = 1;
+  double operando1 = 2;
+  string operacao = 3;
+  double operando2 = 4;
+}
+
+message Resposta {
+  int32 numero = 1;
+  bool sucesso = 2;
+  double resultado = 3;
+  string erro = 4;
+}

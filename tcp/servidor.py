@@ -1,122 +1,94 @@
 import argparse
+import os
 import socket
+import sys
 from concurrent.futures import ThreadPoolExecutor
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT_DIR)
+
+from suporte.calculadora import processar_requisicao
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 6789
 BUFFER_SIZE = 4096
 MAX_WORKERS = 10
 
-def parse_request(message):
-    parts = message.split(":")
-
-    if len(parts) != 5:
-        raise ValueError(
-            "formato inválido; esperado CALC:<n>:<operando1>:<op>:<operando2>"
-        )
-
-    if parts[0] != "CALC":
-        raise ValueError("comando inválido; esperado CALC")
-
-    try:
-        sequence_number = int(parts[1])
-    except ValueError:
-        raise ValueError("número de sequência inválido")
-
-    try:
-        operand1 = float(parts[2])
-        operand2 = float(parts[4])
-    except ValueError:
-        raise ValueError("operando inválido")
-
-    operation = parts[3]
-
-    if operation not in {"+", "-", "*", "/"}:
-        raise ValueError("operação inválida; use +, -, * ou /")
-
-    return sequence_number, operand1, operation, operand2
-
-def calculate(operand1, operation, operand2):
-    if operation == "+":
-        return operand1 + operand2
-
-    if operation == "-":
-        return operand1 - operand2
-
-    if operation == "*":
-        return operand1 * operand2
-
-    if operation == "/":
-        if operand2 == 0:
-            raise ZeroDivisionError("divisão por zero")
-        return operand1 / operand2
-
-    raise ValueError("operação inválida")
-
-def process_request(message):
-    sequence_number = None
-
-    try:
-        parts = message.split(":")
-
-        if len(parts) >= 2:
-            try:
-                sequence_number = int(parts[1])
-            except ValueError:
-                pass
-
-        sequence_number, operand1, operation, operand2 = parse_request(message)
-        result = calculate(operand1, operation, operand2)
-
-        return f"RESULT:{sequence_number}:{result}"
-
-    except ZeroDivisionError as error:
-        return f"ERROR:{sequence_number}:{error}"
-
-    except ValueError as error:
-        if sequence_number is None:
-            return f"ERROR:-1:{error}"
-
-        return f"ERROR:{sequence_number}:{error}"
-
-    except Exception:
-        if sequence_number is None:
-            return "ERROR:-1:erro interno no servidor"
-
-        return f"ERROR:{sequence_number}:erro interno no servidor"
-
 def handle_client(conn, client_address):
     print(
-        f"[CONECTADO] {client_address[0]}:{client_address[1]}"
+        f"[CONECTADO] "
+        f"{client_address[0]}:{client_address[1]}"
     )
+
+    buffer = b""
 
     with conn:
         while True:
             try:
-                data = conn.recv(BUFFER_SIZE)
+                data = conn.recv(
+                    BUFFER_SIZE
+                )
 
                 if not data:
                     break
 
-                message = data.decode("utf-8").strip()
+                buffer += data
 
-                print(
-                    f"[RECEBIDO] {client_address[0]}:{client_address[1]} "
-                    f"-> {message}"
-                )
+                while b"\n" in buffer:
+                    (
+                        message_data,
+                        _,
+                        buffer,
+                    ) = buffer.partition(b"\n")
 
-                response = process_request(message)
+                    message = (
+                        message_data
+                        .decode("utf-8")
+                        .strip()
+                    )
 
-                conn.sendall(response.encode("utf-8"))
+                    if not message:
+                        continue
 
-                print(
-                    f"[ENVIADO] {client_address[0]}:{client_address[1]} "
-                    f"<- {response}"
-                )
+                    print(
+                        f"[RECEBIDO] "
+                        f"{client_address[0]}:"
+                        f"{client_address[1]} -> "
+                        f"{message}"
+                    )
+
+                    response = processar_requisicao(
+                        message
+                    )
+
+                    conn.sendall(
+                        (
+                            response + "\n"
+                        ).encode("utf-8")
+                    )
+
+                    print(
+                        f"[ENVIADO] "
+                        f"{client_address[0]}:"
+                        f"{client_address[1]} <- "
+                        f"{response}"
+                    )
+
+            except UnicodeDecodeError:
+                try:
+                    conn.sendall(
+                        b"ERROR:-1:mensagem nao esta em UTF-8\n"
+                    )
+                except OSError:
+                    pass
+
+                break
 
             except ConnectionResetError:
                 print(
-                    f"[DESCONECTADO] {client_address[0]}:{client_address[1]}"
+                    f"[DESCONECTADO] "
+                    f"{client_address[0]}:"
+                    f"{client_address[1]}"
                 )
                 break
 
@@ -128,23 +100,48 @@ def handle_client(conn, client_address):
                 break
 
     print(
-        f"[ENCERRADO] {client_address[0]}:{client_address[1]}"
+        f"[ENCERRADO] "
+        f"{client_address[0]}:"
+        f"{client_address[1]}"
     )
 
 def main():
     parser = argparse.ArgumentParser(
         description="Servidor TCP da calculadora"
     )
-    parser.add_argument("--host", default=DEFAULT_HOST)
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+
+    parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+    )
+
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+    )
 
     args = parser.parse_args()
 
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_STREAM,
+    )
+
+    server.setsockopt(
+        socket.SOL_SOCKET,
+        socket.SO_REUSEADDR,
+        1,
+    )
 
     try:
-        server.bind((args.host, args.port))
+        server.bind(
+            (
+                args.host,
+                args.port,
+            )
+        )
+
         server.listen()
 
         print("=" * 50)
@@ -156,32 +153,37 @@ def main():
         print("Pressione Ctrl+C para encerrar.")
         print()
 
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        with ThreadPoolExecutor(
+            max_workers=MAX_WORKERS
+        ) as executor:
+
             while True:
-                try:
-                    conn, client_address = server.accept()
+                conn, client_address = (
+                    server.accept()
+                )
 
-                    executor.submit(
-                        handle_client,
-                        conn,
-                        client_address
-                    )
-
-                except OSError as error:
-                    print(
-                        f"[ERRO] Falha ao aceitar conexão: {error}"
-                    )
+                executor.submit(
+                    handle_client,
+                    conn,
+                    client_address,
+                )
 
     except KeyboardInterrupt:
-        print("\nServidor encerrado pelo usuário.")
+        print(
+            "\nServidor encerrado pelo usuário."
+        )
 
     except OSError as error:
         print(
-            f"[ERRO] Não foi possível iniciar o servidor: {error}"
+            f"[ERRO] Não foi possível iniciar "
+            f"o servidor: {error}"
         )
+        return 1
 
     finally:
         server.close()
 
+    return 0
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

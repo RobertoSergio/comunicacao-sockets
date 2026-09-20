@@ -16,56 +16,109 @@ sys.path.insert(
     ROOT_DIR,
 )
 
-from suporte.mensagens import validar_resposta
+from proto import calculadora_pb2
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 6789
+DEFAULT_PORT = 6790
 REQUEST_COUNT = 20
 BUFFER_SIZE = 4096
+HEADER_SIZE = 4
+MAX_MESSAGE_SIZE = 1024 * 1024
 RESULTS_FILE = os.path.join(
     ROOT_DIR,
     "resultados",
-    "resultados_tcp.md",
+    "resultados_proto.md",
 )
 
-def generate_request(sequence_number):
-    operand1 = random.randint(1, 100)
-    operand2 = random.randint(1, 100)
+def generate_request(
+    sequence_number,
+):
+    operand1 = random.randint(
+        1,
+        100,
+    )
+
+    operand2 = random.randint(
+        1,
+        100,
+    )
+
     operation = random.choice(
         ["+", "-", "*", "/"]
     )
 
     if operation == "/":
-        operand2 = random.randint(1, 100)
+        operand2 = random.randint(
+            1,
+            100,
+        )
 
-    return (
-        f"CALC:{sequence_number}:"
-        f"{operand1}:{operation}:{operand2}"
+    return calculadora_pb2.Requisicao(
+        numero=sequence_number,
+        operando1=operand1,
+        operacao=operation,
+        operando2=operand2,
     )
 
-def receive_line(
-    connection,
-    buffer,
-):
-    while b"\n" not in buffer:
+def receive_message(connection):
+    header = bytearray()
+
+    while len(header) < HEADER_SIZE:
         data = connection.recv(
-            BUFFER_SIZE
+            HEADER_SIZE - len(header)
         )
 
         if not data:
-            raise ConnectionResetError(
-                "Conexão encerrada pelo servidor."
+            return None
+
+        header.extend(data)
+
+    message_size = int.from_bytes(
+        header,
+        byteorder="big",
+    )
+
+    if (
+        message_size <= 0
+        or message_size > MAX_MESSAGE_SIZE
+    ):
+        raise ValueError(
+            "tamanho de mensagem inválido"
+        )
+
+    message = bytearray()
+
+    while len(message) < message_size:
+        data = connection.recv(
+            min(
+                BUFFER_SIZE,
+                message_size - len(message),
             )
+        )
 
-        buffer += data
+        if not data:
+            return None
 
-    (
-        message,
-        _,
-        buffer,
-    ) = buffer.partition(b"\n")
+        message.extend(data)
 
-    return message, buffer
+    return bytes(message)
+
+def send_message(
+    connection,
+    message,
+):
+    data = message.SerializeToString()
+
+    size = len(data).to_bytes(
+        HEADER_SIZE,
+        byteorder="big",
+    )
+
+    connection.sendall(
+        size + data
+    )
+
+    return len(data)
 
 def save_results(
     execution,
@@ -75,6 +128,7 @@ def save_results(
     max_rtt,
     average_request_size,
     average_response_size,
+    average_exchange_size,
     responses_received,
 ):
     os.makedirs(
@@ -92,7 +146,7 @@ def save_results(
             RESULTS_FILE
         ) == 0:
             file.write(
-                "# Resultados TCP\n\n"
+                "# Resultados TCP com Protocol Buffers\n\n"
             )
 
         file.write(
@@ -129,6 +183,11 @@ def save_results(
         )
 
         file.write(
+            f"- Tamanho médio da troca: "
+            f"{average_exchange_size:.2f} bytes\n"
+        )
+
+        file.write(
             f"- Respostas recebidas: "
             f"{responses_received}/"
             f"{REQUEST_COUNT}\n\n"
@@ -136,7 +195,7 @@ def save_results(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Cliente TCP da calculadora"
+        description="Cliente TCP com Protocol Buffers"
     )
 
     parser.add_argument(
@@ -165,7 +224,9 @@ def main():
     args = parser.parse_args()
 
     if args.seed is not None:
-        random.seed(args.seed)
+        random.seed(
+            args.seed
+        )
 
     total_start = time.perf_counter()
 
@@ -174,7 +235,9 @@ def main():
     response_sizes = []
 
     print("=" * 60)
-    print("Cliente TCP da calculadora")
+    print(
+        "Cliente TCP com Protocol Buffers"
+    )
     print("=" * 60)
     print(
         f"Servidor: "
@@ -207,8 +270,6 @@ def main():
                 )
             )
 
-            buffer = b""
-
             for sequence_number in range(
                 REQUEST_COUNT
             ):
@@ -216,61 +277,72 @@ def main():
                     sequence_number
                 )
 
-                request_data = (
-                    request + "\n"
-                ).encode("utf-8")
-
                 start = time.perf_counter()
 
-                sock.sendall(
-                    request_data
+                request_size = send_message(
+                    sock,
+                    request,
                 )
 
-                (
-                    response_data,
-                    buffer,
-                ) = receive_line(
-                    sock,
-                    buffer,
+                data = receive_message(
+                    sock
                 )
 
                 end = time.perf_counter()
 
+                if data is None:
+                    raise ConnectionResetError(
+                        "Conexão encerrada pelo servidor."
+                    )
+
                 response = (
-                    response_data
-                    .decode("utf-8")
-                    .strip()
+                    calculadora_pb2.Resposta()
                 )
 
-                validar_resposta(
-                    response,
-                    sequence_number,
+                response.ParseFromString(
+                    data
                 )
+
+                if (
+                    response.numero
+                    != sequence_number
+                ):
+                    raise ValueError(
+                        "número de sequência inesperado"
+                    )
 
                 rtt = (
                     end - start
                 ) * 1000
 
-                request_size = len(
-                    request.encode("utf-8")
-                )
-
                 response_size = len(
-                    response_data
+                    data
                 )
 
-                rtts.append(rtt)
+                rtts.append(
+                    rtt
+                )
+
                 request_sizes.append(
                     request_size
                 )
+
                 response_sizes.append(
                     response_size
                 )
 
+                result = (
+                    response.resultado
+                    if response.sucesso
+                    else response.erro
+                )
+
                 print(
                     f"[{sequence_number:02d}] "
-                    f"{request} -> "
-                    f"{response} | "
+                    f"{request.operando1} "
+                    f"{request.operacao} "
+                    f"{request.operando2} -> "
+                    f"{result} | "
                     f"RTT: {rtt:.2f} ms | "
                     f"Requisição: "
                     f"{request_size} bytes | "
@@ -333,7 +405,14 @@ def main():
         else 0
     )
 
-    responses_received = len(rtts)
+    average_exchange_size = (
+        average_request_size
+        + average_response_size
+    )
+
+    responses_received = len(
+        rtts
+    )
 
     print()
     print("=" * 60)
@@ -360,6 +439,10 @@ def main():
         f"{average_response_size:.2f} bytes"
     )
     print(
+        f"Tamanho médio da troca: "
+        f"{average_exchange_size:.2f} bytes"
+    )
+    print(
         f"Respostas recebidas: "
         f"{responses_received}/"
         f"{REQUEST_COUNT}"
@@ -373,6 +456,7 @@ def main():
         max_rtt,
         average_request_size,
         average_response_size,
+        average_exchange_size,
         responses_received,
     )
 
